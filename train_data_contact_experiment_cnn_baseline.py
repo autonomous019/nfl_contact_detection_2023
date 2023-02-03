@@ -15,7 +15,7 @@ from google.colab import drive
 import os
 
 drive.mount('/content/gdrive')
-os.chdir("//content/gdrive/MyDrive/nfl-big-data-bowl-2023/")
+os.chdir("//content/gdrive/MyDrive/nfl-player-contact-detection/")
 
 data_dir = "/content/gdrive/My Drive/nfl-player-contact-detection/"
 '''
@@ -46,6 +46,7 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import matplotlib.pyplot as plt
 from sklearn.metrics import matthews_corrcoef
+import shutil
 
 '''
 out-of-the box algo fails badly on contact=1, most of positive score which is low, .671, is from contact = 0. 
@@ -143,6 +144,12 @@ for video in tqdm(test_helmets.video.unique()):
         !ffmpeg -i '/content/gdrive/My Drive/nfl-player-contact-detection/test/{video}' -q:v 2 -f image2 '/content/gdrive/My Drive/nfl-player-contact-detection/work/frames/{video}_%04d.jpg' -hide_banner -loglevel error
 '''
 
+'''
+path_mp0=data_dir + 'train/58168_003392_Sideline.mp4'
+path_mp1=data_dir + 'sample1/sample.mp4'
+shutil.copy(path_mp0,path_mp1)
+'''
+
 def create_features(df, tr_tracking, merge_col="step", use_cols=["x_position", "y_position"]):
     output_cols = []
     df_combo = (
@@ -206,8 +213,8 @@ print("Gs ", len(test.loc[test['nfl_player_id_2'] == 'G']))
 print("Gs contact=1 ", len(test.loc[(test['nfl_player_id_2'] == 'G') & (test['contact'] == 1)]))
 print("not Gs ", len(test.loc[test['nfl_player_id_2'] != 'G']))
 print("not Gs contact=1 ", len(test.loc[(test['nfl_player_id_2'] != 'G') & (test['contact'] == 1)]))
-print("not Gs distance < 1 ", len(test.loc[(test['nfl_player_id_2'] != 'G') & (test['distance'] <= 6)]))
-print("not Gs distance < 1 & contact = 1 ", len(test.loc[(test['nfl_player_id_2'] != 'G') & (test['contact'] == 1) & (test['distance'] <= 6)]))
+print("not Gs distance < 1 ", len(test.loc[(test['nfl_player_id_2'] != 'G') & (test['distance'] <= 2.33)]))
+print("not Gs distance < 1 & contact = 1 ", len(test.loc[(test['nfl_player_id_2'] != 'G') & (test['contact'] == 1) & (test['distance'] <= 2.33)]))
 
 """# **create train train data**"""
 
@@ -235,24 +242,255 @@ print("not Gs distance < 1 & contact = 1 ", len(test_test.loc[(test_test['nfl_pl
 
 test_test
 
-"""# **create train and test image collections**"""
+"""# **Create cache of images for each video in train directory**"""
+
+import os
+ 
+# Get the list of all files and directories
+path = data_dir + "train/frames"
+dir_list = os.listdir(path)
+ 
+print("Files and directories in '", path, "' :")
+ 
+# prints all files
+print(len(dir_list))
+#print(dir_list)
+
+import cv2
+import os
+  
+
+for file_name in dir_list:
+    filename = file_name
+    f_path = data_dir + 'train/' + filename
+    print(f_path)
+    #print(filename)
+    # Read the video from specified path
+    cam = cv2.VideoCapture(f_path)
+      
+    # frame
+    currentframe = 1
+      
+    while(True):
+
+        # reading from frame
+        ret,frame = cam.read()
+        #print(ret, frame)
+      
+        if ret:
+            # if video is still left continue creating images
+
+            frame_idx = '{:04d}'.format(currentframe)
+            #print("framed:" ,frame_idx)
+            name = data_dir + 'train/frames/'+filename+'_'+ str(frame_idx) + '.jpg'
+            print ('Creating...' + name)
+      
+            # writing the extracted images
+            cv2.imwrite(name, frame)
+            
+            # increasing counter so that it will
+            # show how many frames are created
+            currentframe += 1
+        else:
+            break
+      
+    # Release all space and windows once done
+    cam.release()
+    cv2.destroyAllWindows()
+
+"""# **Copy Contact Play Images to train/contact**
+
+**copy only the right frames where contact=1**
+
+don't forget to make adjustments for contact is 1 or 0
+
+there are 60 frames per second, but the sensors operate at 10Hz so that you get a split of every 6 steps is 1/10 of a sec or 10Hz. 
+"""
 
 #need to grab img for proper step for game_play and put into train and test directories
-
-game_plays = train_test[['game_play', 'step']]
+# frames = np.array([-4,-3,-2,-1,1,2,3,4])+row[1]
+#switch between test_test and train_test for different directories and images
+game_plays = test_test[['game_play', 'step', 'contact']].copy()
+game_plays = game_plays.drop_duplicates().copy()
+copy_files = []
+#sample only for non-contact
+#game_plays = game_plays.sample(n = 10000).copy() #remove this line for contact = 1
 print(len(game_plays))
-#what is length of game_play / 22 ? 
-print(game_plays['game_play'][12343])
-print(game_plays['step'][12343])
-this_frame = (game_plays['step'][12343]/10*59.94+5*59.94).astype('int')+1
-print(this_frame)
-game_plays.head()
+#create images for train/contact
+for c,i in game_plays.iterrows():
+  game_play = i['game_play']
+  step = i['step']
+  contact = i['contact']
+  #filter for contact or no-contact
+  if contact == 1:
+    this_frame = (step/10*59.94+5*59.94)+1
+    this_frame = int(this_frame)
+    this_frame = '{:04d}'.format(this_frame)
+    print(game_play, step, this_frame, contact)
+    filename1 = game_play+'_Endzone.mp4_'+this_frame+'.jpg'
+    filename2 = game_play+'_Sideline.mp4_'+this_frame+'.jpg'
+    filename3 = game_play+'_All29.mp4_'+this_frame+'.jpg'
+    path1=data_dir + 'train/frames/'+filename1
+    path2=data_dir + 'train/frames/'+filename2
+    path3=data_dir + 'train/frames/'+filename3
+
+    destination1=data_dir + 'train/contact/' + filename1
+    destination2=data_dir + 'train/contact/' + filename2
+    destination3=data_dir + 'train/contact/' + filename3
+
+    print(filename1)
+    copy_files.append(filename1)
+
+    #shutil.copy(path1,destination1)
+    #shutil.copy(path2,destination2)
+    #shutil.copy(path3,destination3)
+    if c > 100000:
+      break
+
+print(len(copy_files))
+print(copy_files)
+print()
+
+"""**create contact=1 directory populate with frames**"""
 
 
 
+print(len(copy_files))
+for i in copy_files:
+  file_copy = i
+  path1 = 'train/frames/' + file_copy
+  destination1 = 'test/contact/' + file_copy
+  from os.path import exists
+  print(path1)
+  file_exists = exists(path1)
+  if file_exists:
+    shutil.copy(path1,destination1)
 
+import os
+ 
+# Get the list of all files and directories
+path = data_dir + "test/contact"
+dir_list = os.listdir(path)
+ 
+print("Files and directories in '", path, "' :")
+ 
+# prints all files
+print(len(dir_list))
+#print(dir_list)
 
+"""**NO-CONTACT**"""
 
+for i in copy_files:
+  file_copy = i
+  path1 = 'train/frames/' + file_copy
+  destination1 = 'train/no-contact/' + file_copy
+  from os.path import exists
+
+  file_exists = exists(path1)
+  if file_exists:
+    shutil.copy(path1,destination1)
+
+import os
+ 
+# Get the list of all files and directories
+path = data_dir + "train/no-contact"
+dir_list = os.listdir(path)
+ 
+print("Files and directories in '", path, "' :")
+ 
+# prints all files
+print(len(dir_list))
+#print(dir_list)
+
+"""# **Create Test Contact and No-Contact Images**
+
+creata a random split in train/contact and train/no-contact and copy to test/contact or test/no-contact
+"""
+
+import os
+ 
+# Get the list of all files and directories
+path = data_dir + "test/"
+dir_list = os.listdir(path)
+ 
+print("Files and directories in '", path, "' :")
+ 
+# prints all files
+print(len(dir_list))
+print(dir_list)
+
+#copy_files.append(filename1)
+
+"""**CONTACT**"""
+
+import os, random, shutil
+
+#copies files from train/contact to test/contact and removes them from train/contact
+source="train/contact"
+dest="test/contact"
+no_of_files=1000
+
+#Using for loop to randomly choose multiple files
+'''
+for i in range(no_of_files):
+    #Variable random_file stores the name of the random file chosen
+    random_file=random.choice(os.listdir(source))
+    print("%d} %s"%(i+1,random_file))
+    source_file="%s/%s"%(source,random_file)
+    dest_file=dest
+    #"shutil.move" function moves file from one directory to another
+    shutil.move(source_file,dest_file)
+
+'''
+
+"""**NO-CONTACT**"""
+
+import os, random, shutil
+
+#copies files from train/no-contact to test/no-contact and removes them from train/contact
+source="train/no-contact"
+dest="test/no-contact"
+no_of_files=1000
+
+#Using for loop to randomly choose multiple files
+'''
+for i in range(no_of_files):
+    #Variable random_file stores the name of the random file chosen
+    random_file=random.choice(os.listdir(source))
+    print("%d} %s"%(i+1,random_file))
+    source_file="%s/%s"%(source,random_file)
+    dest_file=dest
+    #"shutil.move" function moves file from one directory to another
+    shutil.move(source_file,dest_file)
+'''
+
+"""# **Create New Dataframes for Test and Train**
+
+create a train dataframe by reading the files in the train/contact directory
+append to train dataframe by reading the files in the train/no-contact directory
+
+"""
+
+import os
+ 
+# Get the list of all files and directories
+path = data_dir + "train/contact"
+dir_list = os.listdir(path)
+ 
+# prints all files
+print(len(dir_list))
+print(dir_list)
+
+for i in dir_list:
+  args = i.split("_")
+  #print(args)
+  game_id = args[0]
+  play_id = args[1]
+  view = args[2]
+  stepper = args[3]
+  stepper = stepper.split(".")
+  step = stepper[0]
+  #print(game_id, play_id, step)
 
 
 
